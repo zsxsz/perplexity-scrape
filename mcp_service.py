@@ -6,7 +6,7 @@ An MCP server that provides Perplexity AI search capabilities.
 
 import logging
 import os
-from typing import Optional
+from typing import Literal, Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from src.core.perplexity_client import PerplexityClient
@@ -35,10 +35,8 @@ def get_transport_security() -> TransportSecuritySettings:
     )
 
     if not enable_check:
-        # Disabled by default - allows any host (typical for proxy deployments)
         return TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
-    # Host check enabled - configure allowed hosts
     allowed_hosts = [
         "localhost",
         "localhost:*",
@@ -48,7 +46,6 @@ def get_transport_security() -> TransportSecuritySettings:
         "0.0.0.0:*",
     ]
 
-    # Add custom hosts from environment variable
     custom_hosts = os.environ.get("MCP_ALLOWED_HOSTS", "")
     if custom_hosts:
         allowed_hosts.extend([h.strip() for h in custom_hosts.split(",") if h.strip()])
@@ -59,11 +56,36 @@ def get_transport_security() -> TransportSecuritySettings:
     )
 
 
-# Configure transport security (disabled by default for proxy compatibility)
 transport_security = get_transport_security()
 
 mcp = FastMCP("Perplexity Search", transport_security=transport_security)
 _client: Optional[PerplexityClient] = None
+
+DEFAULT_MODEL = "claude46sonnetthinking"
+
+ResearchCategory = Literal[
+    "academic",
+    "api",
+    "library",
+    "implementation",
+    "debugging",
+    "comparison",
+    "general",
+    "ml_architecture",
+    "ml_training",
+    "ml_concepts",
+    "ml_frameworks",
+    "ml_math",
+    "ml_paper",
+    "ml_debugging",
+    "ml_dataset_tabular",
+    "ml_dataset_image",
+    "ml_dataset_text",
+    "ml_dataset_timeseries",
+    "ml_dataset_audio",
+    "ml_dataset_graph",
+    "ml_dataset_multimodal",
+]
 
 
 def get_client() -> PerplexityClient:
@@ -74,43 +96,55 @@ def get_client() -> PerplexityClient:
     return _client
 
 
+def _build_response(
+    response,
+    include_citations: bool,
+    include_related: bool,
+) -> dict:
+    """Build a response dict including only requested optional fields."""
+    result: dict = {"text": response.text or "No response received."}
+    if include_citations:
+        result["citations"] = response.citations
+    if include_related:
+        result["related_queries"] = response.related_queries
+    return result
+
+
 def _error_dict(error: Exception) -> dict:
-    """Build an error response dict matching the standard tool return shape."""
+    """Build an error response with minimal shape."""
     msg = f"[Error] {type(error).__name__}: {error}"
     logger.error(msg)
-    return {
-        "text": msg,
-        "citations": [],
-        "related_queries": [],
-    }
-
-
-def _error_str(error: Exception) -> str:
-    """Build an error response string for tools that return str."""
-    msg = f"[Error] {type(error).__name__}: {error}"
-    logger.error(msg)
-    return msg
+    return {"text": msg}
 
 
 @mcp.tool()
-def perplexity_ask(
+def perplexity_search(
     query: str,
-    mode: str = "copilot",
-    model_preference: str = "claude46sonnetthinking",
-    search_focus: str = "internet",
+    sources: Optional[list[Literal["web", "scholar"]]] = None,
+    include_citations: bool = False,
+    include_related: bool = False,
+    model_preference: str = DEFAULT_MODEL,
+    mode: Literal["copilot", "search"] = "copilot",
 ) -> dict:
-    """
-    Search the web using Perplexity AI.
+    """Search via Perplexity AI. Returns answer text; citations opt-in.
 
     Args:
-        query: The search query to send to Perplexity
-        mode: Search mode - 'copilot' for comprehensive answers, 'search' for quick results
-        model_preference: AI model to use (default: claude46sonnetthinking)
-        search_focus: Focus area - 'internet' for web, 'academic' for scholarly sources
+        query: The search query.
+        sources: Search sources. Use ["web"] (default), ["scholar"] for academic,
+            or ["web", "scholar"] for combined results.
+        include_citations: If True, include source citations in response.
+            Default False to save tokens.
+        include_related: If True, include related query suggestions.
+        model_preference: AI model to use.
+        mode: "copilot" for comprehensive answers, "search" for quick results.
 
     Returns:
-        Dictionary containing the search response with text, citations, and related queries
+        Dict with "text" always present. "citations" and "related_queries"
+        included only when their respective flags are True.
     """
+    selected_sources: list[str] = list(sources) if sources else ["web"]
+    search_focus = "academic" if selected_sources == ["scholar"] else "internet"
+
     try:
         client = get_client()
         response = client.ask(
@@ -118,107 +152,9 @@ def perplexity_ask(
             mode=mode,
             model_preference=model_preference,
             search_focus=search_focus,
+            sources=selected_sources,
         )
-
-        return {
-            "text": response.text or "No response received.",
-            "citations": response.citations,
-            "related_queries": response.related_queries,
-            "media_count": len(response.media_items),
-        }
-    except Exception as e:
-        result = _error_dict(e)
-        result["media_count"] = 0
-        return result
-
-
-@mcp.tool()
-def perplexity_quick_search(
-    query: str, model_preference: str = "claude46sonnetthinking"
-) -> str:
-    """
-    Quick web search using Perplexity AI. Returns just the answer text.
-
-    Args:
-        query: The search query
-        model_preference: AI model to use (default: claude46sonnetthinking)
-
-    Returns:
-        The response text from Perplexity
-    """
-    try:
-        client = get_client()
-        response = client.ask(
-            query=query, mode="copilot", model_preference=model_preference
-        )
-        return response.text or "No response received."
-    except Exception as e:
-        return _error_str(e)
-
-
-@mcp.tool()
-def perplexity_academic_search(
-    query: str, model_preference: str = "claude46sonnetthinking"
-) -> dict:
-    """
-    Search academic sources using Perplexity AI.
-
-    Args:
-        topic: The topic to research
-        category: Context category (e.g., "machine learning", "mathematics", "physics")
-        model_preference: AI model to use (default: claude46sonnetthinking)
-
-    Returns:
-        Dictionary with research findings and citations
-    """
-    try:
-        client = get_client()
-        response = client.ask(
-            query=query,
-            mode="copilot",
-            model_preference=model_preference,
-            search_focus="academic",
-            sources=["scholar"],
-        )
-
-        return {
-            "text": response.text or "No response received.",
-            "citations": response.citations,
-            "related_queries": response.related_queries,
-        }
-    except Exception as e:
-        return _error_dict(e)
-
-
-@mcp.tool()
-def perplexity_comprehensive_search(
-    query: str, model_preference: str = "claude46sonnetthinking"
-) -> dict:
-    """
-    Search both web and academic sources using Perplexity AI.
-
-    Args:
-        query: The search query
-        model_preference: AI model to use (default: claude46sonnetthinking)
-
-    Returns:
-        Dictionary with comprehensive answer combining web and scholarly sources
-    """
-    try:
-        client = get_client()
-        response = client.ask(
-            query=query,
-            mode="copilot",
-            model_preference=model_preference,
-            search_focus="internet",
-            sources=["web", "scholar"],
-        )
-
-        return {
-            "text": response.text or "No response received.",
-            "citations": response.citations,
-            "related_queries": response.related_queries,
-        }
+        return _build_response(response, include_citations, include_related)
     except Exception as e:
         return _error_dict(e)
 
@@ -226,52 +162,32 @@ def perplexity_comprehensive_search(
 @mcp.tool()
 def perplexity_research(
     topic: str,
-    category: str = "general",
-    model_preference: str = "claude46sonnetthinking",
+    category: ResearchCategory = "general",
+    include_citations: bool = False,
+    include_related: bool = False,
+    model_preference: str = DEFAULT_MODEL,
 ) -> dict:
-    """
-    Research a programming topic using Perplexity AI with category-specific prompts.
-
-    Best for: Getting programming-focused research with code examples, API docs,
-    implementation patterns, and best practices.
+    """Research a topic with category-specific prompts. Citations opt-in.
 
     Args:
-        topic: The programming topic to research
-        category: Research category - determines the prompt template used:
-            Programming categories:
-            - "api": API/SDK documentation and usage patterns
-            - "library": Library/framework guides and integration
-            - "implementation": Step-by-step implementation guidance
-            - "debugging": Troubleshooting and debugging approaches
-            - "comparison": Technical comparisons between options
-            - "general": General programming-focused research (default)
-            ML Core categories:
-            - "ml_architecture": Neural network architectures and design patterns
-            - "ml_training": Training optimization, hyperparameters, convergence
-            - "ml_concepts": ML/DL theoretical concepts and foundations
-            - "ml_frameworks": PyTorch, TensorFlow, JAX framework usage
-            - "ml_math": Mathematical foundations for ML
-            - "ml_paper": Research paper analysis and implementation
-            - "ml_debugging": ML model debugging and troubleshooting
-            ML Dataset categories:
-            - "ml_dataset_tabular": Structured/tabular data workflows
-            - "ml_dataset_image": Image dataset processing and models
-            - "ml_dataset_text": Text/NLP dataset workflows
-            - "ml_dataset_timeseries": Time series data analysis
-            - "ml_dataset_audio": Audio dataset processing
-            - "ml_dataset_graph": Graph-structured data workflows
-            - "ml_dataset_multimodal": Multi-modal dataset fusion
-        model_preference: AI model to use (default: claude46sonnetthinking)
+        topic: The topic to research.
+        category: Research category determining the prompt template.
+            Use "academic" for non-programming topics, "general" for
+            programming-focused research, "api"/"library"/"implementation"/
+            "debugging"/"comparison" for targeted programming research, or
+            an "ml_*" category for machine-learning research.
+        include_citations: If True, include source citations. Default False.
+        include_related: If True, include related query suggestions.
+        model_preference: AI model to use.
 
     Returns:
-        Dictionary with research findings, code examples, and citations
+        Dict with "text" always present. "citations" and "related_queries"
+        included only when their respective flags are True.
     """
-    # Normalize category and validate
     normalized_category = category.lower().strip()
     if normalized_category not in VALID_CATEGORIES:
         normalized_category = "general"
 
-    # Get the appropriate prompt template and format with topic
     prompt_template = PROGRAMMING_RESEARCH_PROMPTS[normalized_category]
     research_prompt = prompt_template.format(topic=topic)
 
@@ -284,63 +200,7 @@ def perplexity_research(
             search_focus="internet",
             sources=["web", "scholar"],
         )
-
-        return {
-            "text": response.text or "No response received.",
-            "citations": response.citations,
-            "related_queries": response.related_queries,
-        }
-    except Exception as e:
-        return _error_dict(e)
-
-
-@mcp.tool()
-def perplexity_general_research(
-    topic: str,
-    category: str = "general",
-    model_preference: str = "claude46sonnetthinking",
-) -> dict:
-    """
-    Research a topic using Perplexity AI with a generic/academic-focused prompt.
-
-    Best for: Getting comprehensive background research with formal definitions,
-    theorems, and academic sources. Use this for non-programming topics or when
-    you want academic-style research output.
-
-    Args:
-        topic: The topic to research
-        category: Context category (e.g., "machine learning", "mathematics", "physics")
-        model_preference: AI model to use (default: claude46sonnetthinking)
-
-    Returns:
-        Dictionary with research findings and citations
-    """
-    research_prompt = f"""Research "{topic}" in the context of {category}.
-
-Provide a comprehensive overview including:
-1. **Definition and core concepts**
-2. **Key principles and how it works**
-3. **Practical examples and use cases**
-4. **Important considerations and best practices**
-5. **Related topics and further reading**
-
-Use credible sources and cite where possible."""
-
-    try:
-        client = get_client()
-        response = client.ask(
-            query=research_prompt,
-            mode="copilot",
-            model_preference=model_preference,
-            search_focus="internet",
-            sources=["web", "scholar"],
-        )
-
-        return {
-            "text": response.text or "No response received.",
-            "citations": response.citations,
-            "related_queries": response.related_queries,
-        }
+        return _build_response(response, include_citations, include_related)
     except Exception as e:
         return _error_dict(e)
 
@@ -349,22 +209,16 @@ if __name__ == "__main__":
     from src.config import config
 
     if config.mcp_transport_mode == "http":
-        # Run as HTTP server with streamable-http transport
         import uvicorn
         from src.core.mcp_auth import MCPAuthMiddleware
 
-        # Get the Starlette app from FastMCP
         app = mcp.streamable_http_app()
-
-        # Add authentication middleware
         app.add_middleware(MCPAuthMiddleware)
 
-        # Run with uvicorn
         uvicorn.run(
             app,
             host=config.mcp_http_host,
             port=config.mcp_http_port,
         )
     else:
-        # Default: Run as stdio server (for MCP clients like Claude Desktop)
         mcp.run()

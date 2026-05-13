@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v1.0.0 (2026-05-13)
+
+### Breaking Changes
+
+- **Tool surface consolidated from 6 tools to 2.** `perplexity_ask`, `perplexity_quick_search`, `perplexity_academic_search`, `perplexity_comprehensive_search`, and `perplexity_general_research` are removed. Use `perplexity_search` (with `sources`/`mode` parameters) and `perplexity_research` (with the new `academic` category) instead.
+- **Citations and related queries are opt-in.** Default responses now contain only `text`. Pass `include_citations=True` and/or `include_related=True` to restore the previous behavior. The unused `media_count` field has also been removed from responses.
+
+### Migration
+
+| v0.x | v1.0.0 |
+|------|--------|
+| `perplexity_ask(query)` | `perplexity_search(query, include_citations=True, include_related=True)` |
+| `perplexity_quick_search(query)` | `perplexity_search(query)` |
+| `perplexity_academic_search(query)` | `perplexity_search(query, sources=["scholar"], include_citations=True)` |
+| `perplexity_comprehensive_search(query)` | `perplexity_search(query, sources=["web", "scholar"], include_citations=True)` |
+| `perplexity_research(topic, category)` | `perplexity_research(topic, category)` *(citations now opt-in)* |
+| `perplexity_general_research(topic, category)` | `perplexity_research(topic, category="academic")` |
+
+### Performance
+
+Live measurement (4 real Perplexity calls) before/after this release:
+
+| Scenario | v0.x tokens | v1.0.0 tokens | Δ |
+|----------|-------------|---------------|---|
+| Tool definitions per session | ~1,062 | ~350 | −67% |
+| `search("capital of France?")` | 4,253 | ~10 | −99.8% |
+| `research("FastAPI", "api")` | 7,970 | ~2,100 | −74% |
+| `research("house prices", "ml_dataset_tabular")` | 8,578 | ~3,800 | −56% |
+
+A typical session of 5 research + 10 quick search calls drops from ~83k tokens to ~11k tokens (−87%).
+
+### Features
+
+- New research category `academic` for non-programming topics; replaces the standalone `perplexity_general_research` tool.
+
+### Refactoring
+
+- Conditional response builder in `mcp_service.py`: response dict only contains keys for fields the caller requested.
+- Research categories are now expressed as a `Literal` enum on the `category` parameter rather than a 20-item prose list inside the docstring, reducing tool-definition overhead.
+
+
 ## v0.10.0 (2026-05-06)
 
 ### Features

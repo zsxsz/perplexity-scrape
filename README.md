@@ -197,7 +197,7 @@ curl -X POST http://localhost:8000/mcp \
     "id": 3,
     "method": "tools/call",
     "params": {
-      "name": "perplexity_quick_search",
+      "name": "perplexity_search",
       "arguments": {"query": "What is MCP?"}
     }
   }'
@@ -209,18 +209,49 @@ curl -X POST http://localhost:8000/mcp \
 
 | Tool | Description |
 |------|-------------|
-| `perplexity_ask` | Full search with mode, model, and focus options |
-| `perplexity_quick_search` | Quick search with model selection |
-| `perplexity_academic_search` | Search academic sources with model selection |
-| `perplexity_comprehensive_search` | Search web + academic with model selection |
-| `perplexity_research` | Programming-focused research with model selection |
-| `perplexity_general_research` | General/academic research with model selection |
+| `perplexity_search` | Web/scholar search; returns answer text. Citations and related queries are opt-in. |
+| `perplexity_research` | Topic research with category-specific prompts. Citations and related queries are opt-in. |
 
-> **Model Selection**: All tools support the `model_preference` parameter. Use any model ID from the [Available Models](#available-models) section. Default: `claude45sonnetthinking`.
+> **Token efficiency (v1.0.0)**: Citations and related queries are now opt-in via `include_citations=True` and `include_related=True`. Default responses contain only `text` — typical sessions consume ~85% fewer tokens than v0.x. Pass the flags when you actually need sources.
+
+**Search examples**
+
+```python
+# Default: text-only response (cheapest)
+perplexity_search(query="What is the capital of France?")
+
+# Web search with citations
+perplexity_search(query="latest GPT-5 benchmarks", include_citations=True)
+
+# Academic-only search
+perplexity_search(query="contrastive learning survey", sources=["scholar"], include_citations=True)
+
+# Combined web + academic
+perplexity_search(query="vector databases", sources=["web", "scholar"], include_citations=True)
+```
+
+> **Model Selection**: Both tools accept the `model_preference` parameter. Use any model ID from the [Available Models](#available-models) section. Default: `claude46sonnetthinking`.
+
+### Migration from v0.x
+
+| v0.x tool | v1.0.0 equivalent |
+|-----------|-------------------|
+| `perplexity_ask(query)` | `perplexity_search(query, include_citations=True, include_related=True)` |
+| `perplexity_quick_search(query)` | `perplexity_search(query)` |
+| `perplexity_academic_search(query)` | `perplexity_search(query, sources=["scholar"], include_citations=True)` |
+| `perplexity_comprehensive_search(query)` | `perplexity_search(query, sources=["web", "scholar"], include_citations=True)` |
+| `perplexity_research(topic, category)` | `perplexity_research(topic, category)` *(citations now opt-in)* |
+| `perplexity_general_research(topic, category)` | `perplexity_research(topic, category="academic")` |
 
 ### Research Categories
 
-The `perplexity_research` tool supports 20 specialized categories organized into three groups:
+The `perplexity_research` tool supports 21 specialized categories organized into four groups:
+
+#### General
+
+| Category | Best For |
+|----------|----------|
+| `academic` | Non-programming topics; academic-style overview with definitions and citations |
 
 #### Programming Categories
 

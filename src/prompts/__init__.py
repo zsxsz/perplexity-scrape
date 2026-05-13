@@ -8,6 +8,7 @@ Template files export a single TEMPLATE constant string.
 This __init__.py aggregates all templates into PROGRAMMING_RESEARCH_PROMPTS.
 """
 
+from .academic import TEMPLATE as academic_template
 from .api import TEMPLATE as api_template
 from .library import TEMPLATE as library_template
 from .implementation import TEMPLATE as implementation_template
@@ -30,6 +31,7 @@ from .ml_dataset_graph import TEMPLATE as ml_dataset_graph_template
 from .ml_dataset_multimodal import TEMPLATE as ml_dataset_multimodal_template
 
 PROGRAMMING_RESEARCH_PROMPTS = {
+    "academic": academic_template,
     "api": api_template,
     "library": library_template,
     "implementation": implementation_template,
