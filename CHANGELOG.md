@@ -3,46 +3,41 @@
 
 ## v1.0.0 (2026-05-13)
 
-### Breaking Changes
-
-- **Tool surface consolidated from 6 tools to 2.** `perplexity_ask`, `perplexity_quick_search`, `perplexity_academic_search`, `perplexity_comprehensive_search`, and `perplexity_general_research` are removed. Use `perplexity_search` (with `sources`/`mode` parameters) and `perplexity_research` (with the new `academic` category) instead.
-- **Citations and related queries are opt-in.** Default responses now contain only `text`. Pass `include_citations=True` and/or `include_related=True` to restore the previous behavior. The unused `media_count` field has also been removed from responses.
-
-### Migration
-
-| v0.x | v1.0.0 |
-|------|--------|
-| `perplexity_ask(query)` | `perplexity_search(query, include_citations=True, include_related=True)` |
-| `perplexity_quick_search(query)` | `perplexity_search(query)` |
-| `perplexity_academic_search(query)` | `perplexity_search(query, sources=["scholar"], include_citations=True)` |
-| `perplexity_comprehensive_search(query)` | `perplexity_search(query, sources=["web", "scholar"], include_citations=True)` |
-| `perplexity_research(topic, category)` | `perplexity_research(topic, category)` *(citations now opt-in)* |
-| `perplexity_general_research(topic, category)` | `perplexity_research(topic, category="academic")` |
-
-### Performance
-
-Live measurement (4 real Perplexity calls) before/after this release:
-
-| Scenario | v0.x tokens | v1.0.0 tokens | Δ |
-|----------|-------------|---------------|---|
-| Tool definitions per session | ~1,062 | ~350 | −67% |
-| `search("capital of France?")` | 4,253 | ~10 | −99.8% |
-| `research("FastAPI", "api")` | 7,970 | ~2,100 | −74% |
-| `research("house prices", "ml_dataset_tabular")` | 8,578 | ~3,800 | −56% |
-
-A typical session of 5 research + 10 quick search calls drops from ~83k tokens to ~11k tokens (−87%).
-
 ### Features
 
-- New research category `academic` for non-programming topics; replaces the standalone `perplexity_general_research` tool.
+- Consolidate MCP tools and make citations opt-in for token efficiency
+  ([`c684d3f`](https://github.com/ardzz/perplexity-scrape/commit/c684d3fa6007dd7a1b7d8bbc661ab1c2eb451626))
 
-### Refactoring
+Reduce token consumption ~85% in typical sessions by: - Consolidating 6 tools to 2
+  (perplexity_search, perplexity_research) - Making citations and related_queries opt-in (default
+  off saves ~4-6k tok/call) - Moving 21 research categories from docstring prose to Literal enum -
+  Adding "academic" category to replace standalone perplexity_general_research
 
-- Conditional response builder in `mcp_service.py`: response dict only contains keys for fields the caller requested.
-- Research categories are now expressed as a `Literal` enum on the `category` parameter rather than a 20-item prose list inside the docstring, reducing tool-definition overhead.
+Live measurements: - Tool definitions: 1,062 -> 546 tok per session (-49%) - Simple search response:
+  4,253 -> 4 tok (-99.9%) - Research call: 7,970 -> ~2,100 tok with citations off (-74%)
+
+BREAKING CHANGE: removes perplexity_ask, perplexity_quick_search, perplexity_academic_search,
+  perplexity_comprehensive_search, and perplexity_general_research. Default response shape no longer
+  includes citations, related_queries, or media_count. See CHANGELOG migration table.
+
+### Testing
+
+- Update header assertions to match new API scheme
+  ([`b0453dd`](https://github.com/ardzz/perplexity-scrape/commit/b0453dd3584e38c90524d3c26e12ee10fb870a5d))
+
+### BREAKING CHANGES
+
+- Removes perplexity_ask, perplexity_quick_search, perplexity_academic_search,
+  perplexity_comprehensive_search, and perplexity_general_research. Default response shape no longer
+  includes citations, related_queries, or media_count. See CHANGELOG migration table.
 
 
 ## v0.10.0 (2026-05-06)
+
+### Chores
+
+- **release**: 0.10.0
+  ([`5ac66c0`](https://github.com/ardzz/perplexity-scrape/commit/5ac66c0b6f0ce404565e67c110288b5154d96589))
 
 ### Features
 
